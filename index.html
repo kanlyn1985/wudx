@@ -1,0 +1,398 @@
+
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>录音棚 · 最终完美版</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+<style>
+    body {font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          background: #f3f4f6; min-height: 100vh; padding: 20px; padding-bottom: 100px;}
+    .card {background: white; border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05);}
+    .main-btn {width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; color: white; transition: all 0.2s; cursor: pointer;}
+    .btn-record {background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 10px 25px rgba(239, 68, 68, 0.4);}
+    .btn-stop {background: #4b5563; box-shadow: 0 10px 25px rgba(75, 85, 99, 0.4);}
+    .btn-record.recording {animation: pulse 1.5s infinite;}
+    @keyframes pulse {0%{box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);} 70%{box-shadow: 0 0 0 20px rgba(239, 68, 68, 0);} 100%{box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);}}
+    canvas {width: 100%; height: 80px; background: #1f2937; border-radius: 12px;}
+    .toast {position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.85); color: white; padding: 16px; border-radius: 8px; z-index: 9999; text-align: center; max-width: 85%; font-size: 14px; line-height: 1.5;}
+    .alert-box {background: #fee2e2; color: #991b1b; padding: 15px; border-radius: 10px; font-size: 14px; margin-bottom: 20px; display: none; border: 1px solid #fca5a5;}
+    .hint-text {font-size: 11px; color: #9ca3af; margin-top: 5px;}
+    
+    input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%; background: #6366f1; margin-top: -8px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #e5e7eb; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="max-w-md mx-auto">
+    <div id="protocolAlert" class="alert-box">
+        <strong>⚠️ 权限警告</strong><br>
+        直接打开文件无法录音。<br>请将此网页部署到 HTTPS 服务器（如 GitHub Pages）访问。
+    </div>
+
+    <div class="text-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">录音棚</h1>
+        <p class="text-xs text-gray-500 mt-1">v3.4 最终完美版</p>
+    </div>
+
+    <!-- 1. 伴奏 -->
+    <div class="card">
+        <input type="file" id="accInput" accept="audio/mp4, audio/x-m4a, .m4a, .mp3, audio/mpeg, audio/*" style="display:none">
+        <button onclick="document.getElementById('accInput').click()" 
+                class="w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl font-medium border border-indigo-100 flex items-center justify-center gap-2 active:bg-indigo-100">
+            <i class="fas fa-music"></i> <span id="accLabel">点击选择伴奏</span>
+        </button>
+        <p class="hint-text text-center">💡 提示：在弹出的文件窗口中，点击底部的“最近项目”或搜索“m4a”可快速查找</p>
+    </div>
+
+    <!-- 2. 录音区 & 音量控制 -->
+    <div class="card text-center">
+        <div class="mb-6 space-y-4 text-left px-2">
+            <div>
+                <div class="flex justify-between text-sm mb-1">
+                    <span class="text-gray-600"><i class="fas fa-microphone mr-1"></i>人声增益</span>
+                    <span id="micVal" class="text-indigo-600 font-bold">500%</span>
+                </div>
+                <input type="range" id="micVolume" min="0" max="10" step="0.1" value="5.0" oninput="updateGain()">
+            </div>
+            <div>
+                <div class="flex justify-between text-sm mb-1">
+                    <span class="text-gray-600"><i class="fas fa-music mr-1"></i>伴奏音量（监听）</span>
+                    <span id="accVal" class="text-indigo-600 font-bold">30%</span>
+                </div>
+                <input type="range" id="accVolume" min="0" max="1.5" step="0.1" value="0.3" oninput="updateGain()">
+            </div>
+            <div>
+                <div class="flex justify-between text-sm mb-1">
+                    <span class="text-gray-600"><i class="fas fa-compact-disc mr-1"></i>伴奏音量（录制）</span>
+                    <span id="accRecVal" class="text-indigo-600 font-bold">0%</span>
+                </div>
+                <input type="range" id="accRecVolume" min="0" max="1.5" step="0.1" value="0" oninput="updateGain()">
+            </div>
+        </div>
+
+        <canvas id="visualizer"></canvas>
+        <div id="timeDisplay" class="text-4xl font-mono font-bold text-gray-700 my-6">00:00</div>
+        
+        <div class="flex justify-center gap-6 items-center">
+            <div id="recBtn" onclick="startRecording()" class="main-btn btn-record">
+                <i class="fas fa-microphone"></i>
+            </div>
+            <div id="stopBtn" onclick="stopRecording()" class="main-btn btn-stop" style="display:none">
+                <i class="fas fa-stop"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 列表区 -->
+    <div class="card">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-gray-800">我的作品</h3>
+            <span class="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">页面刷新后清空</span>
+        </div>
+        <div id="recordList" class="space-y-3">
+            <div class="text-center text-gray-400 py-4 text-sm">暂无录音</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let audioCtx, mediaRecorder, micStream;
+let micNode, accMonitorNode, accRecordNode, destNode, analyser;
+let micGainNode, accGainNode, accRecordGainNode; 
+let accBuffer = null;
+let chunks = [];
+let startTime, timerInt, drawReq;
+let recordings = [];
+let currentAudio = null;
+let selectedMimeType = ''; 
+let currentAccName = ""; // 存储当前伴奏的名字
+
+const canvas = document.getElementById('visualizer');
+const ctx = canvas.getContext('2d');
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+
+window.onload = function() {
+    const protocol = window.location.protocol;
+    if (protocol === 'file:' || protocol === 'content:') {
+        document.getElementById('protocolAlert').style.display = 'block';
+    }
+};
+
+function updateGain() {
+    const micVal = document.getElementById('micVolume').value;
+    const accVal = document.getElementById('accVolume').value;
+    const accRecVal = document.getElementById('accRecVolume').value;
+    document.getElementById('micVal').textContent = Math.round(micVal * 100) + '%';
+    document.getElementById('accVal').textContent = Math.round(accVal * 100) + '%';
+    document.getElementById('accRecVal').textContent = Math.round(accRecVal * 100) + '%';
+    if (micGainNode) micGainNode.gain.value = micVal;
+    if (accGainNode) accGainNode.gain.value = accVal;
+    if (accRecordGainNode) accRecordGainNode.gain.value = accRecVal;
+}
+
+document.getElementById('accInput').onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    showToast("正在加载伴奏...");
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        accBuffer = arrayBuffer; 
+        document.getElementById('accLabel').textContent = file.name;
+        
+        // 提取文件名（去除后缀）
+        const lastDot = file.name.lastIndexOf('.');
+        if (lastDot !== -1) {
+            currentAccName = file.name.substring(0, lastDot);
+        } else {
+            currentAccName = file.name;
+        }
+        
+        showToast("伴奏已就绪");
+    } catch(err) {
+        showToast("伴奏加载失败");
+    }
+};
+
+async function startRecording() {
+    if (window.location.protocol === 'file:' || window.location.protocol === 'content:') {
+        alert("请通过 HTTPS 链接访问以使用麦克风。");
+        return;
+    }
+
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        micStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { echoCancellation: false, noiseSuppression: true } 
+        });
+
+        destNode = audioCtx.createMediaStreamDestination();
+        analyser = audioCtx.createAnalyser();
+        
+        // 麦克风链路
+        micNode = audioCtx.createMediaStreamSource(micStream);
+        micGainNode = audioCtx.createGain();
+        micGainNode.gain.value = document.getElementById('micVolume').value;
+        micNode.connect(micGainNode);
+        micGainNode.connect(analyser);
+        micGainNode.connect(destNode);
+
+        // 伴奏链路（双路输出 - 使用两个独立的 BufferSource）
+        if(accBuffer) {
+            const decodedBuffer = await audioCtx.decodeAudioData(accBuffer.slice(0));
+
+            const monitorVol = parseFloat(document.getElementById('accVolume').value);
+            const recordVol = parseFloat(document.getElementById('accRecVolume').value);
+            console.log(`🎵 伴奏增益设置 - 监听: ${monitorVol}, 录制: ${recordVol}`);
+
+            // 监听路径（扬声器） - 独立 BufferSource #1
+            accMonitorNode = audioCtx.createBufferSource();
+            accMonitorNode.buffer = decodedBuffer;
+            accGainNode = audioCtx.createGain();
+            accGainNode.gain.value = monitorVol;
+            accMonitorNode.connect(accGainNode);
+            accGainNode.connect(audioCtx.destination);
+            accMonitorNode.start(0);
+
+            // 录制路径（录音） - 独立 BufferSource #2
+            accRecordNode = audioCtx.createBufferSource();
+            accRecordNode.buffer = decodedBuffer;
+            accRecordGainNode = audioCtx.createGain();
+            accRecordGainNode.gain.value = recordVol;
+            accRecordNode.connect(accRecordGainNode);
+            accRecordGainNode.connect(destNode);
+            accRecordNode.start(0);
+
+            console.log(`✅ 双路伴奏已启动 - 监听和录制完全独立`);
+        }
+
+        // 智能格式选择
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            selectedMimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            selectedMimeType = 'audio/webm;codecs=opus';
+        } else {
+            selectedMimeType = 'audio/webm';
+        }
+
+        mediaRecorder = new MediaRecorder(destNode.stream, { mimeType: selectedMimeType });
+        chunks = [];
+        mediaRecorder.ondataavailable = e => {
+            if(e.data && e.data.size > 0) chunks.push(e.data);
+        };
+        mediaRecorder.onstop = () => saveProcessing(); 
+        mediaRecorder.start(100); 
+        
+        document.getElementById('recBtn').style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'flex';
+        startTime = Date.now();
+        timerInt = setInterval(updateTimer, 1000);
+        drawWave();
+
+    } catch(err) {
+        showToast("启动失败: " + err.message);
+    }
+}
+
+function stopRecording() {
+    clearInterval(timerInt);
+    cancelAnimationFrame(drawReq);
+    document.getElementById('stopBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    setTimeout(() => {
+        if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            micStream.getTracks().forEach(t => t.stop());
+            if(accMonitorNode) try{ accMonitorNode.stop() } catch(e){}
+            if(accRecordNode) try{ accRecordNode.stop() } catch(e){}
+            if(audioCtx) audioCtx.close();
+        }
+    }, 200);
+}
+
+function saveProcessing() {
+    const blob = new Blob(chunks, { type: selectedMimeType });
+    const url = URL.createObjectURL(blob);
+    const id = Date.now();
+    const ext = selectedMimeType.includes('mp4') ? 'm4a' : 'webm';
+    const timeStr = new Date().toLocaleTimeString('zh-CN', {hour12:false}).replace(/:/g,'');
+    
+    // --- 文件命名逻辑 ---
+    let finalName = "";
+    if (currentAccName) {
+        // 伴奏名_翻唱_时间戳
+        finalName = `${currentAccName}_翻唱_${timeStr}`;
+    } else {
+        // 清唱练习_时间戳
+        finalName = `清唱练习_${timeStr}`;
+    }
+    // -----------------
+
+    recordings.unshift({
+        id: id,
+        name: finalName,
+        url: url,
+        blob: blob,
+        size: blob.size,
+        ext: ext
+    });
+
+    renderList();
+    
+    document.getElementById('recBtn').style.display = 'flex';
+    document.getElementById('stopBtn').style.display = 'none';
+    document.getElementById('stopBtn').innerHTML = '<i class="fas fa-stop"></i>';
+    document.getElementById('timeDisplay').textContent = "00:00";
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    showToast(`录音已保存 (${ext})`);
+}
+
+function renderList() {
+    const container = document.getElementById('recordList');
+    if(recordings.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-4 text-sm">暂无录音</div>';
+        return;
+    }
+
+    container.innerHTML = recordings.map(rec => `
+        <div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between border border-gray-200">
+            <div class="flex items-center gap-3 overflow-hidden">
+                <button onclick="playRec('${rec.url}', this)" class="w-10 h-10 rounded-full bg-white border border-indigo-200 text-indigo-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <i class="fas fa-play"></i>
+                </button>
+                <div class="min-w-0">
+                    <div class="font-medium text-gray-800 text-sm truncate">${rec.name}</div>
+                    <div class="text-xs text-gray-400">
+                        ${(rec.size/1024/1024).toFixed(2)} MB · <span class="uppercase">${rec.ext}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <a href="${rec.url}" download="${rec.name}.${rec.ext}" class="p-2 text-gray-500 hover:text-green-600">
+                    <i class="fas fa-download"></i>
+                </a>
+                <button onclick="deleteRec(${rec.id})" class="p-2 text-gray-500 hover:text-red-500">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function playRec(url, btn) {
+    const icon = btn.querySelector('i');
+    if(currentAudio && currentAudio.src === url) {
+        if(currentAudio.paused) {
+            currentAudio.play();
+            icon.className = 'fas fa-pause';
+        } else {
+            currentAudio.pause();
+            icon.className = 'fas fa-play';
+        }
+        return;
+    }
+    if(currentAudio) {
+        currentAudio.pause();
+        document.querySelectorAll('.fa-pause').forEach(i => i.className = 'fas fa-play');
+    }
+    currentAudio = new Audio(url);
+    currentAudio.play();
+    icon.className = 'fas fa-pause';
+    currentAudio.onended = () => {
+        icon.className = 'fas fa-play';
+        currentAudio = null;
+    };
+}
+
+function deleteRec(id) {
+    if(confirm("删除此录音？")) {
+        recordings = recordings.filter(r => r.id !== id);
+        renderList();
+    }
+}
+
+function updateTimer() {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    document.getElementById('timeDisplay').textContent = `${m}:${ss}`;
+}
+
+function drawWave() {
+    drawReq = requestAnimationFrame(drawWave);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(data);
+    ctx.fillStyle = '#1f2937';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#6366f1';
+    ctx.beginPath();
+    const slice = canvas.width / data.length;
+    let x = 0;
+    for(let i=0; i<data.length; i++) {
+        const v = data[i] / 128.0;
+        const y = v * canvas.height / 2;
+        i===0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        x += slice;
+    }
+    ctx.stroke();
+}
+
+function showToast(msg) {
+    const div = document.createElement('div');
+    div.className = 'toast';
+    div.innerText = msg;
+    document.body.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
+}
+</script>
+</body>
+</html>
+```
